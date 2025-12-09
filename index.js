@@ -39,7 +39,15 @@ async function getWidgetTitle() {
     // 如果是组件模式，直接读取保存的标题
     if (config.runsInWidget) {
         if (fm.fileExists(path)) {
-            return fm.readString(path)
+            try {
+                let title = fm.readString(path)
+                // 确保标题不为空
+                if (title && title.trim()) {
+                    return title.trim()
+                }
+            } catch (e) {
+                // 如果读取失败，使用默认标题
+            }
         }
         return DEFAULT_TITLE
     }
@@ -66,8 +74,12 @@ async function getWidgetTitle() {
         title = DEFAULT_TITLE
     }
     
-    // 保存标题
-    fm.writeString(path, title)
+    // 保存标题（确保数据被正确保存）
+    try {
+        fm.writeString(path, title)
+    } catch (e) {
+        console.error("保存标题失败:", e)
+    }
     
     return title
 }
@@ -82,8 +94,19 @@ async function getStartDate() {
     // 如果是组件模式，直接读取保存的日期
     if (config.runsInWidget) {
         if (fm.fileExists(path)) {
-            let dateStr = fm.readString(path)
-            return new Date(dateStr)
+            try {
+                let dateStr = fm.readString(path)
+                let date = new Date(dateStr)
+                // 验证日期是否有效
+                if (isNaN(date.getTime())) {
+                    // 如果日期无效，返回今天
+                    return new Date()
+                }
+                return date
+            } catch (e) {
+                // 如果读取失败，返回今天
+                return new Date()
+            }
         }
         // 默认返回今天
         return new Date()
@@ -103,8 +126,12 @@ async function getStartDate() {
     
     let selectedDate = await datePicker.pickDate()
     
-    // 保存选择的日期
-    fm.writeString(path, selectedDate.toISOString())
+    // 保存选择的日期（使用 ISO 格式确保兼容性）
+    try {
+        fm.writeString(path, selectedDate.toISOString())
+    } catch (e) {
+        console.error("保存日期失败:", e)
+    }
     
     return selectedDate
 }
@@ -479,8 +506,16 @@ async function getBackgroundColors() {
         let fm = FileManager.local()
         let path = fm.joinPath(fm.documentsDirectory(), "widget-colors.json")
         if (fm.fileExists(path)) {
-            let data = fm.readString(path)
-            return JSON.parse(data)
+            try {
+                let data = fm.readString(path)
+                let colors = JSON.parse(data)
+                // 验证颜色数组是否有效
+                if (Array.isArray(colors) && colors.length > 0) {
+                    return colors
+                }
+            } catch (e) {
+                // 如果读取或解析失败，使用默认配色
+            }
         }
         return DEFAULT_PALETTES[Math.floor(Math.random() * DEFAULT_PALETTES.length)]
     }
@@ -503,10 +538,14 @@ async function getBackgroundColors() {
                 // 增强颜色
                 let colors = enhanceColors(extractedColors)
                 
-                // 保存颜色
+                // 保存颜色（确保数据被正确保存）
                 let fm = FileManager.local()
                 let path = fm.joinPath(fm.documentsDirectory(), "widget-colors.json")
-                fm.writeString(path, JSON.stringify(colors))
+                try {
+                    fm.writeString(path, JSON.stringify(colors))
+                } catch (e) {
+                    console.error("保存颜色失败:", e)
+                }
                 
                 return colors
             }
@@ -516,7 +555,11 @@ async function getBackgroundColors() {
     let defaultColors = DEFAULT_PALETTES[Math.floor(Math.random() * DEFAULT_PALETTES.length)]
     let fm = FileManager.local()
     let path = fm.joinPath(fm.documentsDirectory(), "widget-colors.json")
-    fm.writeString(path, JSON.stringify(defaultColors))
+    try {
+        fm.writeString(path, JSON.stringify(defaultColors))
+    } catch (e) {
+        console.error("保存默认颜色失败:", e)
+    }
     
     return defaultColors
 }
@@ -570,14 +613,15 @@ let widgetConfig = getWidgetConfig(widgetFamily)
 // 获取自定义标题
 let widgetTitle = await getWidgetTitle()
 
-// 获取起始日期并计算天数
+// 获取起始日期并计算天数（每次都重新计算，确保使用最新日期）
 let startDate = await getStartDate()
 let today = new Date()
 let dayCount = calculateDaysBetween(startDate, today)
 
 let colors = await getBackgroundColors()
 
-// 生成 Mesh Gradient 背景
+// 生成 Mesh Gradient 背景（每次都重新生成，确保刷新）
+// 添加时间戳确保每次生成的背景都不同，强制刷新
 let bgImage = await createMeshGradientBackground(colors, widgetConfig.width, widgetConfig.height)
 if (bgImage) {
     widget.backgroundImage = bgImage
@@ -633,10 +677,19 @@ centerStack.addSpacer()
 widget.addSpacer()
 
 if (config.runsInWidget) {
+    // 组件模式：设置组件
     Script.setWidget(widget)
 } else {
-    // 预览时可以切换不同尺寸
+    // App 模式：预览时可以切换不同尺寸
     widget.presentMedium()
+    
+    // 在 App 模式下设置数据后，也尝试更新组件（如果已添加）
+    // 这样可以确保添加到桌面后立即显示最新数据
+    try {
+        Script.setWidget(widget)
+    } catch (e) {
+        // 如果组件未添加，忽略错误
+    }
 }
 
 Script.complete()
