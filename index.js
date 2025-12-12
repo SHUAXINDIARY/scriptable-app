@@ -392,7 +392,7 @@ function hexToRgb(hex) {
     return { r, g, b }
 }
 
-// 使用 WebView 生成 Mesh Gradient 背景图片
+// 使用 WebView 生成融合式渐变背景图片（柔和无网格）
 async function createMeshGradientBackground(colors, width, height) {
     let webView = new WebView()
     
@@ -414,7 +414,10 @@ async function createMeshGradientBackground(colors, width, height) {
             const COLORS = ${colorsJson};
             const CANVAS_WIDTH = ${width * scale};
             const CANVAS_HEIGHT = ${height * scale};
-            const BLOB_COUNT = 6;  // 减少柔光球数量，让颜色更清晰
+            
+            // 柔和融合配置
+            const BLOB_COUNT = 8;       // 柔光球数量
+            const LINEAR_LAYERS = 3;    // 叠加线性渐变层数
             
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
@@ -426,49 +429,65 @@ async function createMeshGradientBackground(colors, width, height) {
                 return { r, g, b };
             }
             
-            function generateMeshGradient() {
-                // 1. 填充基础底色（使用第一个颜色）
+            // 柔和融合渐变
+            function generateSoftBlend() {
+                // 基础底色
                 ctx.fillStyle = COLORS[0];
                 ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 
-                // 2. 循环生成随机柔光球 (Blob)
-                for (let i = 0; i < BLOB_COUNT; i++) {
-                    // 随机选取颜色
-                    const hex = COLORS[Math.floor(Math.random() * COLORS.length)];
-                    const colorRgb = hexToRgb(hex);
+                // 叠加多层线性渐变，形成大范围色彩过渡
+                for (let i = 0; i < LINEAR_LAYERS; i++) {
+                    const c1 = COLORS[i % COLORS.length];
+                    const c2 = COLORS[(i + 1) % COLORS.length];
+                    const rgb1 = hexToRgb(c1);
+                    const rgb2 = hexToRgb(c2);
                     
-                    // 使用更高的不透明度，让颜色更鲜明
-                    const startColor = 'rgba(' + colorRgb.r + ', ' + colorRgb.g + ', ' + colorRgb.b + ', 0.95)';
-                    const midColor = 'rgba(' + colorRgb.r + ', ' + colorRgb.g + ', ' + colorRgb.b + ', 0.5)';
-                    const endColor = 'rgba(' + colorRgb.r + ', ' + colorRgb.g + ', ' + colorRgb.b + ', 0)';
+                    // 随机方向的线性渐变
+                    const angle = Math.random() * Math.PI * 2;
+                    const dx = Math.cos(angle) * CANVAS_WIDTH;
+                    const dy = Math.sin(angle) * CANVAS_HEIGHT;
                     
-                    // 随机位置：允许出现在画布边缘外
-                    const x = (Math.random() * CANVAS_WIDTH * 1.4) - (CANVAS_WIDTH * 0.2);
-                    const y = (Math.random() * CANVAS_HEIGHT * 1.4) - (CANVAS_HEIGHT * 0.2);
-                    
-                    // 随机大小：使用较小的半径让颜色区域更集中清晰
-                    const maxDim = Math.max(CANVAS_WIDTH, CANVAS_HEIGHT);
-                    const radius = (Math.random() * 0.4 + 0.3) * maxDim;
-                    
-                    // 创建径向渐变
-                    const gradient = ctx.createRadialGradient(
-                        x, y, 0,        // 渐变起点 (圆心，半径为 0)
-                        x, y, radius    // 渐变终点 (圆心，半径为 radius)
+                    const grad = ctx.createLinearGradient(
+                        CANVAS_WIDTH / 2 - dx / 2,
+                        CANVAS_HEIGHT / 2 - dy / 2,
+                        CANVAS_WIDTH / 2 + dx / 2,
+                        CANVAS_HEIGHT / 2 + dy / 2
                     );
                     
-                    // 添加渐变色标 - 更紧凑的过渡让颜色更鲜明
-                    gradient.addColorStop(0, startColor);
-                    gradient.addColorStop(0.4, midColor);
-                    gradient.addColorStop(0.8, 'rgba(' + colorRgb.r + ', ' + colorRgb.g + ', ' + colorRgb.b + ', 0.15)');
-                    gradient.addColorStop(1, endColor);
+                    grad.addColorStop(0, 'rgba(' + rgb1.r + ', ' + rgb1.g + ', ' + rgb1.b + ', 0.65)');
+                    grad.addColorStop(1, 'rgba(' + rgb2.r + ', ' + rgb2.g + ', ' + rgb2.b + ', 0.65)');
                     
-                    // 填充
-                    ctx.fillStyle = gradient;
+                    ctx.fillStyle = grad;
                     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 }
+                
+                // 叠加柔光球，使颜色在局部区域融合
+                for (let i = 0; i < BLOB_COUNT; i++) {
+                    const hex = COLORS[Math.floor(Math.random() * COLORS.length)];
+                    const c = hexToRgb(hex);
+                    
+                    const x = Math.random() * CANVAS_WIDTH;
+                    const y = Math.random() * CANVAS_HEIGHT;
+                    
+                    // 半径控制：覆盖大区域，形成平滑过渡
+                    const maxDim = Math.max(CANVAS_WIDTH, CANVAS_HEIGHT);
+                    const radius = (Math.random() * 0.5 + 0.45) * maxDim;
+                    
+                    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                    g.addColorStop(0, 'rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', 0.55)');
+                    g.addColorStop(0.6, 'rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', 0.25)');
+                    g.addColorStop(1, 'rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', 0)');
+                    
+                    ctx.fillStyle = g;
+                    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                }
+                
+                // 轻微整体柔化处理（简单的透明蒙层）
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
             }
             
-            generateMeshGradient();
+            generateSoftBlend();
             
             // 导出为 base64（使用最高质量）
             window.meshGradientData = canvas.toDataURL('image/png', 1.0);
